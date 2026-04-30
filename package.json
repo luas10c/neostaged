@@ -9,6 +9,6 @@
     "test:ci": "npm run --prefix packages/cli test:ci"
   },
   "workspaces": [
-    "packages/*"
+    "packages/cli"
   ]
 }

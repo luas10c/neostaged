@@ -101,6 +101,8 @@ async function main() {
 
   const target = getTarget()
 
+  console.log('target', target)
+
   const packageName = `@neostaged/neostaged-${target}`
   const binaryName = `neostaged-${target}.node`
 
