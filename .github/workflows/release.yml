@@ -14,8 +14,11 @@ jobs:
     if: github.event.release.target_commitish == 'main'
 
     runs-on: ubuntu-latest
+
     env:
       NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
+      CI: true
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
