@@ -8,9 +8,9 @@
     "arm"
   ],
   "files": [
-    "neostaged-linux-gnueabihf.node"
+    "neostaged-linux-arm-gnueabihf.node"
   ],
-  "main": "neostaged-linux-gnueabihf.node",
+  "main": "neostaged-linux-arm-gnueabihf.node",
   "repository": {
     "type": "git",
     "url": "git+http://github.com/luas10c/neostaged.git"
