@@ -99,7 +99,7 @@ jobs:
 
             zig build -Dtarget="$ZIG_TARGET" -Dtarget_name="$t" --release=small || exit 1
 
-            FILE="zig-out/lib/neostaged-$t.node"
+            FILE="zig-out/neostaged-$t.node"
 
             if [ ! -f "$FILE" ]; then
               echo "$FILE not found"
