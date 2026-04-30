@@ -19,10 +19,20 @@ jobs:
           cache: "npm"
 
       - name: Install Zig 0.16.x
+        shell: bash
         run: |
-          curl https://www.zvm.app/install.sh | bash
+          curl -fsSL https://www.zvm.app/install.sh | bash
+
+          export ZVM_INSTALL="$HOME/.zvm/self"
+          export PATH="$ZVM_INSTALL:$PATH"
+
           zvm install 0.16
           zvm use 0.16
+
+          echo "$HOME/.zvm/bin" >> "$GITHUB_PATH"
+          echo "$ZVM_INSTALL" >> "$GITHUB_PATH"
+
+          zig version
 
       - run: npm ci
 
