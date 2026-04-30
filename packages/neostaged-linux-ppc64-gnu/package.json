@@ -1,6 +1,6 @@
 {
   "name": "@neostaged/neostaged-linux-ppc64-gnu",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "os": [
     "linux"
   ],
