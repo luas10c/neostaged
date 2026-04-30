@@ -10,6 +10,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    env:
+      CI: true
+
     steps:
       - uses: actions/checkout@v6
       - name: Use Node.js 24.x
@@ -31,8 +34,6 @@ jobs:
 
           echo "$HOME/.zvm/bin" >> "$GITHUB_PATH"
           echo "$ZVM_INSTALL" >> "$GITHUB_PATH"
-
-          zig version
 
       - run: npm ci
 

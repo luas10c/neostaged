@@ -94,6 +94,11 @@ async function runNpmInstall(pkg, cwd) {
 }
 
 async function main() {
+  if (process.env.CI === 'true') {
+    console.log('Skipping native install on CI')
+    return
+  }
+
   const target = getTarget()
 
   const packageName = `@neostaged/neostaged-${target}`
