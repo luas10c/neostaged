@@ -15,7 +15,7 @@ pub fn main(init: std.process.Init) void {
 }
 
 fn runMain(init: std.process.Init, allocator: std.mem.Allocator) void {
-    tryMain(init.io, allocator, init.minimal.args) catch |err| {
+    tryMain(init, allocator) catch |err| {
         if (builtin.mode == .Debug) {
             std.debug.print("{s}\n", .{@errorName(err)});
         }
@@ -25,15 +25,17 @@ fn runMain(init: std.process.Init, allocator: std.mem.Allocator) void {
 }
 
 fn tryMain(
-    io: std.Io,
+    init: std.process.Init,
     allocator: std.mem.Allocator,
-    raw_args: anytype,
 ) !void {
+    const io = init.io;
     var cwd_arg: ?[]const u8 = null;
     var config_arg: ?[]const u8 = null;
     var list = false;
 
-    var args = raw_args.iterate();
+    var args = try init.minimal.args.iterateAllocator(allocator);
+    defer args.deinit();
+
     _ = args.next();
 
     while (args.next()) |arg| {

@@ -1,6 +1,6 @@
 {
   "name": "neostaged",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "type": "module",
   "files": [
     "dist",
@@ -34,18 +34,18 @@
     "typescript-eslint": "^8.59.1"
   },
   "optionalDependencies": {
-    "@neostaged/neostaged-darwin-arm64": "0.0.1",
-    "@neostaged/neostaged-darwin-x64": "0.0.1",
-    "@neostaged/neostaged-linux-arm-gnueabihf": "0.0.1",
-    "@neostaged/neostaged-linux-arm64-gnu": "0.0.1",
-    "@neostaged/neostaged-linux-arm64-musl": "0.0.1",
-    "@neostaged/neostaged-linux-ppc64-gnu": "0.0.1",
-    "@neostaged/neostaged-linux-s390x-gnu": "0.0.1",
-    "@neostaged/neostaged-linux-x64-gnu": "0.0.1",
-    "@neostaged/neostaged-linux-x64-musl": "0.0.1",
-    "@neostaged/neostaged-win32-arm64-msvc": "0.0.1",
-    "@neostaged/neostaged-win32-ia32-msvc": "0.0.1",
-    "@neostaged/neostaged-win32-x64-msvc": "0.0.1"
+    "@neostaged/neostaged-darwin-arm64": "0.0.2",
+    "@neostaged/neostaged-darwin-x64": "0.0.2",
+    "@neostaged/neostaged-linux-arm-gnueabihf": "0.0.2",
+    "@neostaged/neostaged-linux-arm64-gnu": "0.0.2",
+    "@neostaged/neostaged-linux-arm64-musl": "0.0.2",
+    "@neostaged/neostaged-linux-ppc64-gnu": "0.0.2",
+    "@neostaged/neostaged-linux-s390x-gnu": "0.0.2",
+    "@neostaged/neostaged-linux-x64-gnu": "0.0.2",
+    "@neostaged/neostaged-linux-x64-musl": "0.0.2",
+    "@neostaged/neostaged-win32-arm64-msvc": "0.0.2",
+    "@neostaged/neostaged-win32-ia32-msvc": "0.0.2",
+    "@neostaged/neostaged-win32-x64-msvc": "0.0.2"
   },
   "repository": {
     "type": "git",

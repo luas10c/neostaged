@@ -5,9 +5,7 @@ import { join } from 'node:path'
 
 const require = createRequire(import.meta.dirname)
 
-const addon = require(
-  join(import.meta.dirname, 'neostaged-x86_64-linux-musl.node')
-)
+const addon = require(join(import.meta.dirname, '..', 'bin', 'neostaged.node'))
 
 const help = `
 neostaged

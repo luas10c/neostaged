@@ -8,6 +8,8 @@ dist
 
 zig-out
 
+.cache
+
 .eslintcache
 
 *.tsbuildinfo
