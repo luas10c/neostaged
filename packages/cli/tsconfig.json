@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "strictNullChecks": true,
+
+    "noImplicitAny": true,
+    "noImplicitReturns": true,
+
+    "target": "es2022",
+    "module": "es2022",
+    "moduleResolution": "bundler",
+
+    "esModuleInterop": true,
+
+    "types": ["node"]
+  }
+}

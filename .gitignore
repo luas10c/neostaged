@@ -1,0 +1,16 @@
+node_modules
+
+coverage
+
+dist
+
+.zig-cache
+
+zig-out
+
+.eslintcache
+
+*.tsbuildinfo
+
+.env*
+!.env.example

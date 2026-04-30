@@ -1,0 +1,24 @@
+{
+  "name": "@neostaged/neostaged-linux-arm64-gnu",
+  "version": "0.0.1",
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "files": [
+    "neostaged-linux-arm64-gnu.node"
+  ],
+  "main": "neostaged-linux-arm64-gnu.node",
+  "repository": {
+    "type": "git",
+    "url": "git+http://github.com/luas10c/neostaged.git"
+  },
+  "bugs": {
+    "url": "http://github.com/luas10c/neostaged/issues"
+  },
+  "author": "Luciano Alves <luas10c@gmail.com>",
+  "homepage": "http://github.com/luas10c/neostaged",
+  "license": "MIT"
+}

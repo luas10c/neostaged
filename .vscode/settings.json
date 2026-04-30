@@ -1,0 +1,5 @@
+{
+  "[zig]": {
+    "editor.defaultFormatter": "ziglang.vscode-zig"
+  }
+}

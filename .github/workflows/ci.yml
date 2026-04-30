@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+      - name: Use Node.js 24.x
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          cache: "npm"
+
+      - name: Install Zig 0.16.x
+        run: |
+          curl https://www.zvm.app/install.sh | bash
+          zvm install 0.16
+          zvm use 0.16
+
+      - run: npm ci
+
+      - run: zig fmt --check .
+      - run: zig build -Dtarget=x86_64-linux-musl --release=small
+
+      - run: npm run build --if-present
+      - run: npm run test:ci
+
+

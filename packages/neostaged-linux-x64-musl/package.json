@@ -1,0 +1,27 @@
+{
+  "name": "@neostaged/neostaged-linux-x64-musl",
+  "version": "0.0.1",
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "libc": [
+    "musl"
+  ],
+  "files": [
+    "neostaged-linux-x64-musl.node"
+  ],
+  "main": "neostaged-linux-x64-musl.node",
+  "repository": {
+    "type": "git",
+    "url": "git+http://github.com/luas10c/neostaged.git"
+  },
+  "bugs": {
+    "url": "http://github.com/luas10c/neostaged/issues"
+  },
+  "author": "Luciano Alves <luas10c@gmail.com>",
+  "homepage": "http://github.com/luas10c/neostaged",
+  "license": "MIT"
+}

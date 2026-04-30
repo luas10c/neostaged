@@ -1,0 +1,123 @@
+name: Node.js CI
+
+on:
+  release:
+    types:
+      - created
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build:
+    if: github.event.release.target_commitish == 'main'
+
+    runs-on: ubuntu-latest
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install Zig 0.16.x
+        run: |
+          curl https://www.zvm.app/install.sh | bash
+          zvm install 0.16
+          zvm use 0.16
+
+      - name: Use Node.js 24.x
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          cache: 'npm'
+          registry-url: https://registry.npmjs.org
+
+      - run: npm ci
+
+      - name: Build all targets
+        shell: bash
+        run: |
+          TARGETS="
+          linux-arm-gnueabihf
+          linux-arm64-gnu
+          linux-arm64-musl
+          linux-ppc64-gnu
+          linux-s390x-gnu
+          linux-x64-gnu
+          linux-x64-musl
+          darwin-arm64
+          darwin-x64
+          win32-arm64-msvc
+          win32-ia32-msvc
+          win32-x64-msvc
+          "
+
+          for t in $TARGETS; do
+            echo "Building $t"
+
+            case $t in
+              linux-x64-gnu) ZIG_TARGET=x86_64-linux-gnu ;;
+              linux-x64-musl) ZIG_TARGET=x86_64-linux-musl ;;
+              linux-arm64-gnu) ZIG_TARGET=aarch64-linux-gnu ;;
+              linux-arm64-musl) ZIG_TARGET=aarch64-linux-musl ;;
+              linux-arm-gnueabihf) ZIG_TARGET=arm-linux-gnueabihf ;;
+              linux-ppc64-gnu) ZIG_TARGET=powerpc64le-linux-gnu ;;
+              linux-s390x-gnu) ZIG_TARGET=s390x-linux-gnu ;;
+              darwin-arm64) ZIG_TARGET=aarch64-macos ;;
+              darwin-x64) ZIG_TARGET=x86_64-macos ;;
+              win32-arm64-msvc) ZIG_TARGET=aarch64-windows-msvc ;;
+              win32-ia32-msvc) ZIG_TARGET=x86-windows-msvc ;;
+              win32-x64-msvc) ZIG_TARGET=x86_64-windows-msvc ;;
+              *) echo "Target inválido: $t"; exit 1 ;;
+            esac
+
+            PACKAGE="@neostaged/neostaged-$t"
+            DIR="packages/neostaged-$t"
+
+            VERSION=$(npm pkg get version --workspace="$DIR" | tr -d '"')
+
+            echo "Checking npm package $PACKAGE@$VERSION"
+
+            if npm view "$PACKAGE@$VERSION" version >/dev/null 2>&1; then
+              echo "$PACKAGE@$VERSION It already exists on npm, skipping the build and publish steps."
+              continue
+            fi
+
+            rm -rf zig-out
+
+            zig build -Dtarget="$ZIG_TARGET" -Dtarget_name="$t" --release=small || exit 1
+
+            FILE="zig-out/lib/neostaged-$t.node"
+
+            if [ ! -f "$FILE" ]; then
+              echo "$FILE not found"
+              exit 1
+            fi
+
+            mkdir -p "$DIR"
+            mv "$FILE" "$DIR/neostaged-$t.node"
+
+            npm publish "$DIR" --access public --provenance
+          done
+
+      - name: Build CLI (packages/cli)
+        shell: bash
+        run: |
+          PACKAGE=$(npm pkg get name --workspace="packages/cli" | tr -d '"')
+          VERSION=$(npm pkg get version --workspace="packages/cli" | tr -d '"')
+
+          echo "Checking npm package $PACKAGE@$VERSION"
+
+          if npm view "$PACKAGE@$VERSION" version >/dev/null 2>&1; then
+            echo "$PACKAGE@$VERSION It already exists on npm, skipping the build and publish steps."
+            exit 0
+          fi
+
+          echo "$PACKAGE@$VERSION It doesn't exist, building it."
+
+          npm run --prefix packages/cli build
+
+          npm publish "packages/cli" \
+            --access public \
+            --provenance

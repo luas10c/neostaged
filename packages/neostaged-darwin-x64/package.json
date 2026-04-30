@@ -1,0 +1,24 @@
+{
+  "name": "@neostaged/neostaged-darwin-x64",
+  "version": "0.0.1",
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "neostaged-darwin-x64.node"
+  ],
+  "main": "neostaged-darwin-x64.node",
+  "repository": {
+    "type": "git",
+    "url": "git+http://github.com/luas10c/neostaged.git"
+  },
+  "bugs": {
+    "url": "http://github.com/luas10c/neostaged/issues"
+  },
+  "author": "Luciano Alves <luas10c@gmail.com>",
+  "homepage": "http://github.com/luas10c/neostaged",
+  "license": "MIT"
+}

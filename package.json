@@ -1,0 +1,14 @@
+{
+  "name": "neostaged",
+  "description": "",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "build": "npm run --prefix packages/cli build",
+    "lint": "npm run --prefix packages/cli lint",
+    "test:ci": "npm run --prefix packages/cli test:ci"
+  },
+  "workspaces": [
+    "packages/cli"
+  ]
+}
