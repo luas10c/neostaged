@@ -86,7 +86,7 @@ jobs:
             PACKAGE="@neostaged/neostaged-$t"
             DIR="packages/neostaged-$t"
 
-            VERSION=$(npm pkg get version --workspace="$DIR" | tr -d '"')
+            VERSION=$(npm --prefix "$DIR" pkg get version | tr -d '"')
 
             echo "Checking npm package $PACKAGE@$VERSION"
 
