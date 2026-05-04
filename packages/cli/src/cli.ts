@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createRequire } from 'node:module'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
 const require = createRequire(import.meta.dirname)
 
@@ -28,7 +28,7 @@ type Options = {
 
 function parseArgs(argv: unknown[]) {
   const options: Options = {
-    cwd: '.',
+    cwd: process.cwd(),
     config: null,
     list: false
   }
@@ -37,7 +37,7 @@ function parseArgs(argv: unknown[]) {
     const arg = argv[i] as '--cwd' | '--config' | '--list'
 
     if (arg === '--cwd') {
-      options.cwd = argv[++i] as '--cwd' | '--config' | '--list'
+      options.cwd = resolve(argv[++i] as string)
     } else if (arg === '--config') {
       options.config = argv[++i] as null
     } else if (arg === '--list') {
