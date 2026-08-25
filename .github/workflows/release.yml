@@ -86,7 +86,7 @@ jobs:
               *) echo "Unknown target: $t"; exit 1 ;;
             esac
 
-            DIR="packages/neostaged-$t"
+            DIR="./packages/neostaged-$t"
             if [ ! -d "$DIR" ]; then
               echo "Directory $DIR does not exist, skipping."
               continue
@@ -126,7 +126,7 @@ jobs:
       - name: Build and publish CLI package (neostaged)
         shell: bash
         run: |
-          DIR="packages/cli"
+          DIR="./packages/cli"
           PACKAGE=$(npm --prefix "$DIR" pkg get name | tr -d '"')
           VERSION=$(npm --prefix "$DIR" pkg get version | tr -d '"')
 
