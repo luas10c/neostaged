@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://github.com/luas10c/neostaged/blob/main/brand.png?raw=true" alt="Neostaged">
+<img src="https://github.com/luas10c/neostaged/blob/main/brand.png?raw=true" width="480" alt="Neostaged">
 
 **Ultra-fast, zero-dependency pre-commit tool built with Zig & Node.js N-API.**
 
