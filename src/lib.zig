@@ -2,6 +2,7 @@
 //! reachable through one named import, without duplicating files across
 //! compilation modules.
 pub const ansi = @import("ansi.zig");
+pub const config = @import("config.zig");
 pub const glob = @import("glob.zig");
 pub const json5 = @import("json5.zig");
 pub const spinner = @import("spinner.zig");

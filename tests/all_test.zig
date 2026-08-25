@@ -5,6 +5,7 @@
 //! resolve inside Node itself.
 comptime {
     _ = @import("ansi_test.zig");
+    _ = @import("config_test.zig");
     _ = @import("glob_test.zig");
     _ = @import("json5_test.zig");
     _ = @import("spinner_test.zig");

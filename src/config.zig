@@ -209,23 +209,14 @@ fn loadJavascriptFile(io: std.Io, allocator: Allocator, path: []const u8) !std.j
     return json5.parse(body, allocator);
 }
 
-fn javascriptConfigBody(contents: []const u8) ![]const u8 {
+/// Reduces a JS config file down to the raw object-literal body that can be
+/// handed to the JSON5 parser. Understands ESM/CJS export forms, skips any
+/// leading comments and `import` statements (e.g. `defineConfig` imported
+/// from `neostaged/config`) and unwraps `defineConfig({ ... })` calls.
+pub fn javascriptConfigBody(contents: []const u8) ![]const u8 {
     var body = std.mem.trim(u8, contents, " \n\r\t");
-
-    if (std.mem.startsWith(u8, body, "export default")) {
-        body = body["export default".len..];
-    } else if (std.mem.startsWith(u8, body, "module.exports")) {
-        body = body["module.exports".len..];
-        body = std.mem.trimStart(u8, body, " \n\r\t");
-
-        if (body.len == 0 or body[0] != '=') {
-            return error.UnsupportedJavascriptConfig;
-        }
-
-        body = body[1..];
-    } else {
-        return error.UnsupportedJavascriptConfig;
-    }
+    body = skipPrelude(body);
+    body = try stripExportPrefix(body);
 
     body = std.mem.trim(u8, body, " \n\r\t");
 
@@ -233,7 +224,133 @@ fn javascriptConfigBody(contents: []const u8) ![]const u8 {
         body = body[0 .. body.len - 1];
     }
 
+    body = unwrapDefineConfig(body);
+
     return std.mem.trim(u8, body, " \n\r\t");
+}
+
+fn isWhitespace(c: u8) bool {
+    return c == ' ' or c == '\n' or c == '\r' or c == '\t';
+}
+
+/// Skips leading whitespace, comments and whole `import ...` statements so
+/// that only the exported value (or whatever follows them) remains.
+fn skipPrelude(body: []const u8) []const u8 {
+    var i: usize = 0;
+
+    while (i < body.len) {
+        while (i < body.len and isWhitespace(body[i])) : (i += 1) {}
+        if (i == body.len) break;
+
+        const rest = body[i..];
+
+        if (std.mem.startsWith(u8, rest, "//")) {
+            while (i < body.len and body[i] != '\n') : (i += 1) {}
+            continue;
+        }
+
+        if (std.mem.startsWith(u8, rest, "/*")) {
+            const close = std.mem.indexOfPos(u8, body, i + 2, "*/") orelse return body[i..];
+            i = close + "*/".len;
+            continue;
+        }
+
+        if (isImportStatement(rest)) {
+            i = skipBalancedStatement(body, i);
+            continue;
+        }
+
+        if (isRequireDestructureStatement(rest)) {
+            const end = skipBalancedStatement(body, i);
+            // Only swallow the declaration when it really pulls from a
+            // module (`const { defineConfig } = require('neostaged/config')`);
+            // plain constants are left alone so their misuse still errors
+            // loudly downstream.
+            if (std.mem.indexOf(u8, body[i..end], "require(") == null) break;
+            i = end;
+            continue;
+        }
+
+        break;
+    }
+
+    return body[i..];
+}
+
+fn isImportStatement(rest: []const u8) bool {
+    if (!std.mem.startsWith(u8, rest, "import")) return false;
+    if (rest.len == "import".len) return false;
+
+    return switch (rest["import".len]) {
+        ' ', '\n', '\r', '\t', '{', '*', '\'', '"', '(' => true,
+        else => false,
+    };
+}
+
+fn isRequireDestructureStatement(rest: []const u8) bool {
+    if (!std.mem.startsWith(u8, rest, "const")) return false;
+    if (rest.len == "const".len) return false;
+
+    return isWhitespace(rest["const".len]);
+}
+
+/// Consumes one top-level declaration, stopping after its terminating `;`
+/// or at the newline that closes it when the semicolon is omitted. Braces,
+/// brackets and parentheses are tracked so multi-line statements
+/// (`import {\n  defineConfig\n} from '...'`) survive.
+fn skipBalancedStatement(body: []const u8, start: usize) usize {
+    var i = start;
+    var depth: usize = 0;
+
+    while (i < body.len) : (i += 1) {
+        switch (body[i]) {
+            '{', '(', '[' => depth += 1,
+            '}', ')', ']' => {
+                if (depth > 0) depth -= 1;
+            },
+            ';' => {
+                if (depth == 0) return i + 1;
+            },
+            '\n' => {
+                if (depth == 0) return i;
+            },
+            else => {},
+        }
+    }
+
+    return i;
+}
+
+fn stripExportPrefix(body: []const u8) ![]const u8 {
+    if (std.mem.startsWith(u8, body, "export default")) {
+        return body["export default".len..];
+    }
+
+    if (std.mem.startsWith(u8, body, "module.exports")) {
+        const tail = std.mem.trimStart(u8, body["module.exports".len..], " \n\r\t");
+
+        if (tail.len == 0 or tail[0] != '=') {
+            return error.UnsupportedJavascriptConfig;
+        }
+
+        return tail[1..];
+    }
+
+    return error.UnsupportedJavascriptConfig;
+}
+
+/// Rewrites `defineConfig( ... )` down to its argument so configs built with
+/// the typed helper from `neostaged/config` parse like plain objects.
+fn unwrapDefineConfig(body: []const u8) []const u8 {
+    if (!std.mem.startsWith(u8, body, "defineConfig")) return body;
+
+    const opened = std.mem.trimStart(u8, body["defineConfig".len..], " \n\r\t");
+    if (opened.len == 0 or opened[0] != '(') return body;
+
+    const closed = std.mem.trimEnd(u8, opened, " \n\r\t");
+    if (closed[closed.len - 1] != ')') return body;
+
+    return closed[1 .. closed.len - 1];
 }
 
 fn shouldUseJson5(file_name: []const u8) bool {
