@@ -5,6 +5,10 @@ on:
     branches:
       - main
       - dev
+  pull_request:
+    branches:
+      - main
+      - dev
 
 jobs:
   build:
@@ -15,33 +19,32 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
-      - name: Use Node.js 24.x
+
+      - name: Setup Node.js 24.x
         uses: actions/setup-node@v7
         with:
           node-version: 24.x
           cache: "npm"
 
-      - name: Install Zig 0.16.x
-        shell: bash
-        run: |
-          curl -fsSL https://www.zvm.app/install.sh | bash
-
-          export ZVM_INSTALL="$HOME/.zvm/self"
-          export PATH="$ZVM_INSTALL:$PATH"
-
-          zvm install 0.16
-          zvm use 0.16
-
-          echo "$HOME/.zvm/bin" >> "$GITHUB_PATH"
-          echo "$ZVM_INSTALL" >> "$GITHUB_PATH"
+      - name: Setup Zig 0.16.0
+        uses: vercel-labs/setup-zig@v1
+        with:
+          version: 0.16.0
 
       - run: npm ci
 
-      - run: zig fmt --check .
-      - run: zig build test
-      - run: zig build -Dtarget=x86_64-linux-musl --release=small
+      - name: Check Zig Formatting
+        run: zig fmt --check src/ tests/ build.zig
 
-      - run: npm run build --if-present
-      - run: npm run test:ci
+      - name: Run Zig Tests
+        run: zig build test --summary all
 
+      - name: Build Native Release Addon
+        run: zig build --release=small
 
+      - name: Build CLI & Run Lint / Tests
+        run: |
+          cp -f zig-out/neostaged-unknown.node packages/cli/bin/neostaged.node
+          npm run --prefix packages/cli build
+          npm run --prefix packages/cli lint
+          npm run --prefix packages/cli test

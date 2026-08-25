@@ -1,18 +1,20 @@
-name: Node.js CI
+name: Release & Publish
 
 on:
+  push:
+    tags:
+      - 'v*'
   release:
     types:
+      - published
       - created
 
 permissions:
   id-token: write
-  contents: read
+  contents: write
 
 jobs:
-  build:
-    if: github.event.release.target_commitish == 'main'
-
+  publish:
     runs-on: ubuntu-latest
 
     env:
@@ -23,30 +25,30 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Install Zig 0.16.x
-        shell: bash
-        run: |
-          curl -fsSL https://www.zvm.app/install.sh | bash
-
-          export ZVM_INSTALL="$HOME/.zvm/self"
-          export PATH="$ZVM_INSTALL:$PATH"
-
-          zvm install 0.16
-          zvm use 0.16
-
-          echo "$HOME/.zvm/bin" >> "$GITHUB_PATH"
-          echo "$ZVM_INSTALL" >> "$GITHUB_PATH"
-
-      - name: Use Node.js 24.x
+      - name: Setup Node.js 24.x
         uses: actions/setup-node@v7
         with:
           node-version: 24.x
           cache: 'npm'
-          registry-url: https://registry.npmjs.org
+          registry-url: 'https://registry.npmjs.org'
 
-      - run: npm ci
+      - name: Setup Zig 0.16.0
+        uses: vercel-labs/setup-zig@v1
+        with:
+          version: 0.16.0
 
-      - name: Build all targets
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download Windows Node.js import libraries
+        shell: bash
+        run: |
+          mkdir -p /tmp/node-libs
+          curl -fsSL https://nodejs.org/dist/v24.0.0/win-x64/node.lib -o /tmp/node-libs/x64.lib
+          curl -fsSL https://nodejs.org/dist/v24.0.0/win-arm64/node.lib -o /tmp/node-libs/arm64.lib
+          curl -fsSL https://nodejs.org/dist/v20.18.0/win-x86/node.lib -o /tmp/node-libs/x86.lib
+
+      - name: Build and publish target native packages
         shell: bash
         run: |
           TARGETS="
@@ -65,70 +67,79 @@ jobs:
           "
 
           for t in $TARGETS; do
-            echo "Building $t"
+            echo "=== Processing target $t ==="
 
+            NODE_LIB=""
             case $t in
-              linux-x64-gnu) ZIG_TARGET=x86_64-linux-gnu ;;
-              linux-x64-musl) ZIG_TARGET=x86_64-linux-musl ;;
-              linux-arm64-gnu) ZIG_TARGET=aarch64-linux-gnu ;;
-              linux-arm64-musl) ZIG_TARGET=aarch64-linux-musl ;;
+              linux-x64-gnu)       ZIG_TARGET=x86_64-linux-gnu ;;
+              linux-x64-musl)      ZIG_TARGET=x86_64-linux-musl ;;
+              linux-arm64-gnu)     ZIG_TARGET=aarch64-linux-gnu ;;
+              linux-arm64-musl)    ZIG_TARGET=aarch64-linux-musl ;;
               linux-arm-gnueabihf) ZIG_TARGET=arm-linux-gnueabihf ;;
-              linux-ppc64-gnu) ZIG_TARGET=powerpc64le-linux-gnu ;;
-              linux-s390x-gnu) ZIG_TARGET=s390x-linux-gnu ;;
-              darwin-arm64) ZIG_TARGET=aarch64-macos ;;
-              darwin-x64) ZIG_TARGET=x86_64-macos ;;
-              win32-arm64-msvc) ZIG_TARGET=aarch64-windows-msvc ;;
-              win32-ia32-msvc) ZIG_TARGET=x86-windows-msvc ;;
-              win32-x64-msvc) ZIG_TARGET=x86_64-windows-msvc ;;
-              *) echo "Target inválido: $t"; exit 1 ;;
+              linux-ppc64-gnu)     ZIG_TARGET=powerpc64le-linux-gnu ;;
+              linux-s390x-gnu)     ZIG_TARGET=s390x-linux-gnu ;;
+              darwin-arm64)        ZIG_TARGET=aarch64-macos ;;
+              darwin-x64)          ZIG_TARGET=x86_64-macos ;;
+              win32-arm64-msvc)    ZIG_TARGET=aarch64-windows-gnu; NODE_LIB=/tmp/node-libs/arm64.lib ;;
+              win32-ia32-msvc)     ZIG_TARGET=x86-windows-gnu; NODE_LIB=/tmp/node-libs/x86.lib ;;
+              win32-x64-msvc)      ZIG_TARGET=x86_64-windows-gnu; NODE_LIB=/tmp/node-libs/x64.lib ;;
+              *) echo "Unknown target: $t"; exit 1 ;;
             esac
 
-            PACKAGE="@neostaged/neostaged-$t"
             DIR="packages/neostaged-$t"
+            if [ ! -d "$DIR" ]; then
+              echo "Directory $DIR does not exist, skipping."
+              continue
+            fi
 
+            PACKAGE=$(npm --prefix "$DIR" pkg get name | tr -d '"')
             VERSION=$(npm --prefix "$DIR" pkg get version | tr -d '"')
 
             echo "Checking npm package $PACKAGE@$VERSION"
 
             if npm view "$PACKAGE@$VERSION" version >/dev/null 2>&1; then
-              echo "$PACKAGE@$VERSION It already exists on npm, skipping the build and publish steps."
+              echo "$PACKAGE@$VERSION already exists on npm, skipping."
               continue
             fi
 
             rm -rf zig-out
 
-            zig build -Dtarget="$ZIG_TARGET" -Dtarget_name="$t" --release=small || exit 1
+            if [ -n "$NODE_LIB" ]; then
+              zig build -Dtarget="$ZIG_TARGET" -Dtarget_name="$t" -Dnode_lib="$NODE_LIB" --release=small || exit 1
+            else
+              zig build -Dtarget="$ZIG_TARGET" -Dtarget_name="$t" --release=small || exit 1
+            fi
 
             FILE="zig-out/neostaged-$t.node"
 
             if [ ! -f "$FILE" ]; then
-              echo "$FILE not found"
+              echo "Error: $FILE not found"
               exit 1
             fi
 
-            mkdir -p "$DIR"
-            mv "$FILE" "$DIR/neostaged-$t.node"
+            cp -f "$FILE" "$DIR/neostaged-$t.node"
 
+            echo "Publishing $PACKAGE@$VERSION from $DIR..."
             npm publish "$DIR" --access public --provenance
           done
 
-      - name: Build CLI (packages/cli)
+      - name: Build and publish CLI package (neostaged)
         shell: bash
         run: |
-          PACKAGE=$(npm pkg get name --workspace="packages/cli" | tr -d '"')
-          VERSION=$(npm pkg get version --workspace="packages/cli" | tr -d '"')
+          DIR="packages/cli"
+          PACKAGE=$(npm --prefix "$DIR" pkg get name | tr -d '"')
+          VERSION=$(npm --prefix "$DIR" pkg get version | tr -d '"')
 
           echo "Checking npm package $PACKAGE@$VERSION"
 
           if npm view "$PACKAGE@$VERSION" version >/dev/null 2>&1; then
-            echo "$PACKAGE@$VERSION It already exists on npm, skipping the build and publish steps."
+            echo "$PACKAGE@$VERSION already exists on npm, skipping CLI publish."
             exit 0
           fi
 
-          echo "$PACKAGE@$VERSION It doesn't exist, building it."
-
+          echo "Building CLI package $PACKAGE@$VERSION..."
           npm run --prefix packages/cli build
+          cp -f README.md "$DIR/README.md"
 
-          npm publish "packages/cli" \
-            --access public \
-            --provenance
+          echo "Publishing CLI package $PACKAGE@$VERSION..."
+          npm publish "$DIR" --access public --provenance
