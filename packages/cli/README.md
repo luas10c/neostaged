@@ -140,6 +140,23 @@ npx neostaged
 ```
 
 #### `neostaged.config.js`
+
+With full type-safety via the built-in `neostaged/config` export:
+
+```js
+import { defineConfig } from 'neostaged/config'
+
+export default defineConfig({
+  ignores: [],
+  tasks: {
+    '**/*.{js,ts}': ['eslint --fix', 'prettier --write'],
+    '*.css': 'stylelint --fix'
+  }
+})
+```
+
+Plain object exports keep working too:
+
 ```js
 export default {
   ignores: [
@@ -151,7 +168,7 @@ export default {
     '**/*.{js,ts}': ['eslint --fix', 'prettier --write'],
     '*.css': 'stylelint --fix'
   }
-};
+}
 ```
 
 ---

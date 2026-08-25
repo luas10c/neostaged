@@ -9,6 +9,12 @@
   "bin": {
     "neostaged": "dist/cli.js"
   },
+  "exports": {
+    "./config": {
+      "types": "./dist/config.d.ts",
+      "default": "./dist/config.js"
+    }
+  },
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
