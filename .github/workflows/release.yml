@@ -117,10 +117,10 @@ jobs:
             cp -f "$FILE" "$DIR/neostaged-$t.node"
 
             echo "Publishing $PACKAGE@$VERSION from $DIR..."
-            npm publish "$DIR" --access public --provenance
+            npm publish "$DIR" --provenance --access public
           done
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and publish CLI package (neostaged)
         shell: bash
@@ -141,6 +141,6 @@ jobs:
           cp -f README.md "$DIR/README.md"
 
           echo "Publishing CLI package $PACKAGE@$VERSION..."
-          npm publish "$DIR" --access public --provenance
+          npm publish "$DIR" --provenance --access public
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
