@@ -27,9 +27,13 @@ pub const CliOptions = struct {
 };
 
 const Config = struct {
+    ignores: [][]const u8,
     entries: []ConfigEntry,
 
     fn deinit(self: Config, allocator: std.mem.Allocator) void {
+        for (self.ignores) |ignore_pattern| allocator.free(ignore_pattern);
+        allocator.free(self.ignores);
+
         for (self.entries) |entry| {
             allocator.free(entry.pattern);
             for (entry.commands) |command| allocator.free(command);
@@ -739,6 +743,13 @@ fn gitStagedFiles(io: std.Io, allocator: std.mem.Allocator, repo_root: []const u
     return try files.toOwnedSlice(allocator);
 }
 
+fn isIgnored(ignores: [][]const u8, file: []const u8) bool {
+    for (ignores) |ignore_pattern| {
+        if (glob.match(ignore_pattern, file)) return true;
+    }
+    return false;
+}
+
 fn buildExecutionPlan(
     allocator: std.mem.Allocator,
     cfg: Config,
@@ -758,6 +769,8 @@ fn buildExecutionPlan(
         }
 
         for (staged_files) |file| {
+            if (isIgnored(cfg.ignores, file)) continue;
+
             if (glob.match(entry.pattern, file)) {
                 try matched_files.append(allocator, try allocator.dupe(u8, file));
             }
@@ -919,11 +932,48 @@ fn shellQuote(allocator: std.mem.Allocator, value: []const u8) ![]const u8 {
     return try std.fmt.allocPrint(allocator, "'{s}'", .{escaped});
 }
 
+fn parseIgnores(
+    allocator: std.mem.Allocator,
+    out: *std.ArrayListUnmanaged([]const u8),
+    value: std.json.Value,
+) !void {
+    switch (value) {
+        .string => |str| {
+            if (str.len > 0) {
+                try out.append(allocator, try allocator.dupe(u8, str));
+            }
+        },
+        .array => |array| {
+            for (array.items) |item| {
+                switch (item) {
+                    .string => |str| {
+                        if (str.len > 0) {
+                            try out.append(allocator, try allocator.dupe(u8, str));
+                        }
+                    },
+                    else => {},
+                }
+            }
+        },
+        else => {},
+    }
+}
+
 fn ConfigFromJson(allocator: std.mem.Allocator, value: std.json.Value) !Config {
     const root = switch (value) {
         .object => |object| object,
         else => return error.ConfigMustBeObject,
     };
+
+    var ignores: std.ArrayListUnmanaged([]const u8) = .empty;
+    errdefer {
+        for (ignores.items) |item| allocator.free(item);
+        ignores.deinit(allocator);
+    }
+
+    if (root.get("ignores")) |raw_ignores| {
+        try parseIgnores(allocator, &ignores, raw_ignores);
+    }
 
     const object = if (root.get("tasks")) |tasks|
         switch (tasks) {
@@ -932,6 +982,12 @@ fn ConfigFromJson(allocator: std.mem.Allocator, value: std.json.Value) !Config {
         }
     else
         root;
+
+    if (ignores.items.len == 0) {
+        if (object.get("ignores")) |raw_ignores| {
+            try parseIgnores(allocator, &ignores, raw_ignores);
+        }
+    }
 
     var entries: std.ArrayListUnmanaged(ConfigEntry) = .empty;
     errdefer {
@@ -945,6 +1001,8 @@ fn ConfigFromJson(allocator: std.mem.Allocator, value: std.json.Value) !Config {
 
     var iterator = object.iterator();
     while (iterator.next()) |entry| {
+        if (std.mem.eql(u8, entry.key_ptr.*, "ignores")) continue;
+
         const commands = try parseCommands(allocator, entry.value_ptr.*);
         errdefer {
             for (commands) |command| allocator.free(command);
@@ -969,6 +1027,7 @@ fn ConfigFromJson(allocator: std.mem.Allocator, value: std.json.Value) !Config {
     }
 
     return .{
+        .ignores = try ignores.toOwnedSlice(allocator),
         .entries = try entries.toOwnedSlice(allocator),
     };
 }

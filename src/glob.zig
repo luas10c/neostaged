@@ -1,7 +1,75 @@
 const std = @import("std");
 
 pub fn match(pattern: []const u8, text: []const u8) bool {
+    if (findFirstBraceGroup(pattern)) |group| {
+        const prefix = pattern[0..group.open_idx];
+        const suffix = pattern[group.close_idx + 1 ..];
+        const inner = pattern[group.open_idx + 1 .. group.close_idx];
+
+        var it = std.mem.splitScalar(u8, inner, ',');
+        while (it.next()) |raw_alt| {
+            const alt = std.mem.trim(u8, raw_alt, " ");
+            var buf: [1024]u8 = undefined;
+            const total_len = prefix.len + alt.len + suffix.len;
+
+            if (total_len <= buf.len) {
+                @memcpy(buf[0..prefix.len], prefix);
+                @memcpy(buf[prefix.len .. prefix.len + alt.len], alt);
+                @memcpy(buf[prefix.len + alt.len .. total_len], suffix);
+                if (match(buf[0..total_len], text)) return true;
+            } else {
+                const sub_pattern = std.fmt.allocPrint(std.heap.page_allocator, "{s}{s}{s}", .{ prefix, alt, suffix }) catch continue;
+                defer std.heap.page_allocator.free(sub_pattern);
+                if (match(sub_pattern, text)) return true;
+            }
+        }
+        return false;
+    }
+
     return matchInner(pattern, text);
+}
+
+const BraceGroup = struct {
+    open_idx: usize,
+    close_idx: usize,
+};
+
+fn findFirstBraceGroup(pattern: []const u8) ?BraceGroup {
+    var i: usize = 0;
+    while (i < pattern.len) : (i += 1) {
+        if (pattern[i] == '\\') {
+            i += 1;
+            continue;
+        }
+
+        if (pattern[i] == '{') {
+            const open_idx = i;
+            var depth: usize = 1;
+            var has_comma = false;
+            i += 1;
+
+            while (i < pattern.len) : (i += 1) {
+                if (pattern[i] == '\\') {
+                    i += 1;
+                    continue;
+                }
+                if (pattern[i] == '{') {
+                    depth += 1;
+                } else if (pattern[i] == '}') {
+                    depth -= 1;
+                    if (depth == 0) {
+                        if (has_comma) {
+                            return BraceGroup{ .open_idx = open_idx, .close_idx = i };
+                        }
+                        break;
+                    }
+                } else if (pattern[i] == ',' and depth == 1) {
+                    has_comma = true;
+                }
+            }
+        }
+    }
+    return null;
 }
 
 fn matchInner(pattern: []const u8, text: []const u8) bool {

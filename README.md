@@ -142,8 +142,15 @@ npx neostaged
 #### `neostaged.config.js`
 ```js
 export default {
-  "*.{js,ts}": ["eslint --fix", "prettier --write"],
-  "*.css": "stylelint --fix"
+  ignores: [
+    '**/*.test.ts',
+    '**/*.spec.ts',
+    '**/generated/**'
+  ],
+  tasks: {
+    '**/*.{js,ts}': ['eslint --fix', 'prettier --write'],
+    '*.css': 'stylelint --fix'
+  }
 };
 ```
 

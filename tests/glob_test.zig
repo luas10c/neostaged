@@ -21,3 +21,22 @@ test "glob escaping" {
     try std.testing.expect(glob.match("file\\*.txt", "file*.txt"));
     try std.testing.expect(!glob.match("file\\*.txt", "file123.txt"));
 }
+
+test "glob brace expansion" {
+    try std.testing.expect(glob.match("**/*.{js,ts}", "src/index.js"));
+    try std.testing.expect(glob.match("**/*.{js,ts}", "src/index.ts"));
+    try std.testing.expect(glob.match("**/*.{js,ts}", "deep/nested/path/app.ts"));
+    try std.testing.expect(!glob.match("**/*.{js,ts}", "src/index.css"));
+    try std.testing.expect(!glob.match("**/*.{js,ts}", "src/index.json"));
+
+    try std.testing.expect(glob.match("*.{js,ts,tsx}", "app.tsx"));
+    try std.testing.expect(glob.match("*.{js,ts,tsx}", "app.js"));
+    try std.testing.expect(glob.match("*.{js,ts,tsx}", "app.ts"));
+    try std.testing.expect(!glob.match("*.{js,ts,tsx}", "app.jsx"));
+
+    try std.testing.expect(glob.match("src/{components,utils}/*.{js,ts}", "src/components/button.ts"));
+    try std.testing.expect(glob.match("src/{components,utils}/*.{js,ts}", "src/utils/format.js"));
+    try std.testing.expect(!glob.match("src/{components,utils}/*.{js,ts}", "src/views/main.js"));
+
+    try std.testing.expect(glob.match("**/*.{js, ts}", "src/index.ts")); // whitespace handling
+}
