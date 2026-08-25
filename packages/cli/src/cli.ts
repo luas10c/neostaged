@@ -87,23 +87,69 @@ function getVersion(): string {
   }
 }
 
+function isMusl(): boolean {
+  if (process.platform !== 'linux') return false
+  try {
+    const report = (process.report?.getReport?.() as { header?: { glibcVersionRuntime?: string } } | undefined)
+    return !report?.header?.glibcVersionRuntime
+  } catch {
+    return false
+  }
+}
+
+function getTarget(): string {
+  const { platform, arch } = process
+
+  if (platform === 'darwin') {
+    if (arch === 'arm64') return 'darwin-arm64'
+    if (arch === 'x64') return 'darwin-x64'
+  }
+
+  if (platform === 'win32') {
+    if (arch === 'arm64') return 'win32-arm64-msvc'
+    if (arch === 'ia32') return 'win32-ia32-msvc'
+    if (arch === 'x64') return 'win32-x64-msvc'
+  }
+
+  if (platform === 'linux') {
+    const musl = isMusl() ? 'musl' : 'gnu'
+    if (arch === 'x64') return `linux-x64-${musl}`
+    if (arch === 'arm64') return `linux-arm64-${musl}`
+    if (arch === 'arm') return 'linux-arm-gnueabihf'
+    if (arch === 'ppc64') return 'linux-ppc64-gnu'
+    if (arch === 's390x') return 'linux-s390x-gnu'
+  }
+
+  throw new Error(`Unsupported platform: ${platform} ${arch}`)
+}
+
+function loadNativeAddon(): { run: (options: Record<string, unknown>) => boolean } {
+  // 1. Try local dev binary (built by zig build and placed in packages/cli/bin/neostaged.node)
+  const localAddonPath = resolve(import.meta.dirname, '..', 'bin', 'neostaged.node')
+  try {
+    return require(localAddonPath) as { run: (options: Record<string, unknown>) => boolean }
+  } catch {
+    // Fall through to npm optionalDependency lookup
+  }
+
+  // 2. Resolve platform-specific npm package
+  const target = getTarget()
+  const packageName = `@neostaged/neostaged-${target}`
+
+  try {
+    return require(packageName) as { run: (options: Record<string, unknown>) => boolean }
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err)
+    fail(`Failed to load native binary package (${packageName}): ${reason}`)
+  }
+}
+
 try {
   const options = parseArgs(process.argv)
 
-  const addonPath = resolve(import.meta.dirname, '..', 'bin', 'neostaged.node')
+  const addon = loadNativeAddon()
 
-  let run: (options: Record<string, unknown>) => boolean
-
-  try {
-    run = require(addonPath).run
-  } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err)
-    console.error(`Failed to load the neostaged native module: ${reason}`)
-    console.error('Reinstall the package so its postinstall script can fetch the native binary.')
-    process.exit(1)
-  }
-
-  const ok = run({
+  const ok = addon.run({
     cwd: options.cwd ?? resolve('.'),
     config: options.config,
     list: options.list,
