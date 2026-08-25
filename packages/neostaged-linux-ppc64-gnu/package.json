@@ -1,6 +1,6 @@
 {
   "name": "@neostaged/neostaged-linux-ppc64-gnu",
-  "version": "0.0.2",
+  "version": "0.1.0",
   "os": [
     "linux"
   ],
@@ -13,7 +13,7 @@
   "main": "neostaged-linux-ppc64-gnu.node",
   "repository": {
     "type": "git",
-    "url": "git+http://github.com/luas10c/neostaged.git"
+    "url": "git+https://github.com/luas10c/neostaged.git"
   },
   "bugs": {
     "url": "http://github.com/luas10c/neostaged/issues"

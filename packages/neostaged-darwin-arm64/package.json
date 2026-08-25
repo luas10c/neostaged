@@ -1,6 +1,6 @@
 {
   "name": "@neostaged/neostaged-darwin-arm64",
-  "version": "0.0.2",
+  "version": "0.1.0",
   "os": [
     "darwin"
   ],
@@ -13,7 +13,7 @@
   "main": "neostaged-darwin-arm64.node",
   "repository": {
     "type": "git",
-    "url": "git+http://github.com/luas10c/neostaged.git"
+    "url": "git+https://github.com/luas10c/neostaged.git"
   },
   "bugs": {
     "url": "http://github.com/luas10c/neostaged/issues"

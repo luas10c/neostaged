@@ -31,7 +31,8 @@ jobs:
         with:
           version: 0.16.0
 
-      - run: npm ci
+      - name: Install dependencies
+        run: npm ci --omit=optional
 
       - name: Check Zig Formatting
         run: zig fmt --check src/ tests/ build.zig

@@ -1,6 +1,6 @@
 {
   "name": "@neostaged/neostaged-win32-ia32-msvc",
-  "version": "0.0.2",
+  "version": "0.1.0",
   "os": [
     "win32"
   ],
@@ -13,7 +13,7 @@
   "main": "neostaged-win32-ia32-msvc.node",
   "repository": {
     "type": "git",
-    "url": "git+http://github.com/luas10c/neostaged.git"
+    "url": "git+https://github.com/luas10c/neostaged.git"
   },
   "bugs": {
     "url": "http://github.com/luas10c/neostaged/issues"
