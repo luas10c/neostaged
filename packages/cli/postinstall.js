@@ -50,7 +50,7 @@ function runNpmInstallOnce(pkg, cwd) {
 
     const child = spawn(
       command,
-      ['install', '--no-save', '--ignore-scripts', '--prefer-online', pkg],
+      ['install', '--no-save', '--ignore-scripts', pkg],
       {
         cwd,
         stdio: 'inherit'
@@ -95,7 +95,7 @@ async function runNpmInstall(pkg, cwd) {
 
 async function main() {
   if (process.env.CI === 'true') {
-    console.log('Skipping native install on CI')
+    console.log('Skipping native install on CI (neostaged will not be usable in this environment)')
     return
   }
 
