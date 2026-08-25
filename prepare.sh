@@ -1,17 +1,11 @@
-mkdir -p .cache/node-libs/win-x86
+#!/usr/bin/env bash
+set -euo pipefail
 
-curl -L \
-  -o .cache/node-libs/win-x86/node.lib \
-  https://nodejs.org/dist/v24.11.0/win-x86/node.lib
+NODE_VERSION="v24.11.0"
+BASE_URL="https://nodejs.org/dist/${NODE_VERSION}"
 
+mkdir -p .cache/node-libs/win-x86 .cache/node-libs/win-arm64 .cache/node-libs/win-x64
 
-mkdir -p .cache/node-libs/win-arm64
-
-curl -L \
-  -o .cache/node-libs/win-arm64/node.lib \
-  https://nodejs.org/dist/v24.11.0/win-arm64/node.lib
-
-mkdir -p .cache/node-libs/win-x64
-curl -fL \
-  -o .cache/node-libs/win-x64/node.lib \
-  https://nodejs.org/download/release/latest-v24.x/win-x64/node.lib
+curl -fSL -o .cache/node-libs/win-x86/node.lib "${BASE_URL}/win-x86/node.lib"
+curl -fSL -o .cache/node-libs/win-arm64/node.lib "${BASE_URL}/win-arm64/node.lib"
+curl -fSL -o .cache/node-libs/win-x64/node.lib "${BASE_URL}/win-x64/node.lib"

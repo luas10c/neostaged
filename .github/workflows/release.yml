@@ -21,7 +21,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Install Zig 0.16.x
         shell: bash
@@ -38,7 +38,7 @@ jobs:
           echo "$ZVM_INSTALL" >> "$GITHUB_PATH"
 
       - name: Use Node.js 24.x
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 24.x
           cache: 'npm'

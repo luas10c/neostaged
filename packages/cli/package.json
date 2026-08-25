@@ -1,7 +1,6 @@
 {
   "name": "neostaged",
-  "version": "0.0.4",
-  "type": "module",
+  "version": "0.0.5",
   "files": [
     "dist",
     "postinstall.js",
@@ -11,8 +10,8 @@
   "bin": {
     "neostaged": "dist/cli.js"
   },
+  "type": "module",
   "scripts": {
-    "postinstall": "node ./postinstall.js",
     "build": "tsc -p tsconfig.build.json",
     "postbuild": "tsc-alias -f -p tsconfig.build.json",
     "lint": "eslint --cache",
@@ -24,15 +23,17 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@jest/globals": "^30.3.0",
+    "@jest/globals": "^30.4.1",
+    "@stylistic/eslint-plugin": "^5.10.0",
     "@swc/jest": "^0.2.39",
-    "@types/node": "^25.6.0",
-    "globals": "^17.5.0",
-    "jest": "^30.3.0",
-    "prettier": "^3.8.3",
-    "tsc-alias": "^1.8.16",
+    "@types/node": "^26.2.0",
+    "eslint": "^10.9.1",
+    "globals": "^17.11.0",
+    "husky": "^9.1.7",
+    "jest": "^30.4.2",
+    "tsc-alias": "^1.9.2",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.59.1"
+    "typescript-eslint": "^8.68.0"
   },
   "optionalDependencies": {
     "@neostaged/neostaged-darwin-arm64": "0.0.2",
@@ -51,14 +52,14 @@
   "repository": {
     "type": "git",
     "url": "git+http://github.com/luas10c/neostaged.git",
-    "directory": "packages/core"
+    "directory": "packages/cli"
   },
   "bugs": {
     "url": "http://github.com/luas10c/neostaged/issues"
   },
   "author": "Luciano Alves <luas10c@gmail.com>",
   "engines": {
-    "node": ">=20"
+    "node": ">=20.11"
   },
   "license": "MIT"
 }

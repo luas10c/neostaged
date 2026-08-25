@@ -1,14 +1,22 @@
 {
   "name": "neostaged",
-  "description": "",
-  "version": "0.0.1",
+  "description": "Ultra-fast, zero-dependency pre-commit tool built with Zig & Node.js N-API",
+  "version": "0.0.5",
   "private": true,
+  "type": "module",
   "scripts": {
     "build": "npm run --prefix packages/cli build",
     "lint": "npm run --prefix packages/cli lint",
-    "test:ci": "npm run --prefix packages/cli test:ci"
+    "test:ci": "npm run --prefix packages/cli test:ci",
+    "prepare": "husky"
   },
   "workspaces": [
     "packages/cli"
-  ]
+  ],
+  "devDependencies": {
+    "@commitlint/cli": "^21.2.2",
+    "@commitlint/config-conventional": "^21.2.2",
+    "husky": "^9.1.7"
+  },
+  "license": "MIT"
 }
