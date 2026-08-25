@@ -210,7 +210,6 @@ pub fn run(io: std.Io, allocator: std.mem.Allocator, options: CliOptions) !void 
     // Single ownership point: freed on every exit path, including early errors.
     defer if (failed) |failure| failure.deinit(allocator);
 
-    // ---- Safety setup: backup snapshot + hiding of partially staged files ----
     var backup: ?git.Backup = null;
     var hid_partial = false;
     var partial_files: [][]const u8 = &.{};
@@ -255,9 +254,7 @@ pub fn run(io: std.Io, allocator: std.mem.Allocator, options: CliOptions) !void 
 
         hid_partial = snapshotted and hidden;
     }
-    // ---- End of safety setup ----
 
-    // ---- v7 Header: ◆ version · branch · staged count ----
     {
         const ver_str = try std.fmt.allocPrint(allocator, "v{s}", .{build_options.version});
         defer allocator.free(ver_str);
@@ -468,7 +465,6 @@ pub fn run(io: std.Io, allocator: std.mem.Allocator, options: CliOptions) !void 
         if (backup != null) git.dropBackup(io, allocator, repo_root);
         dbgMark("M4-post-drop");
 
-        // ---- Rail close: done line, timings, footer ops ----
         const end_ts = std.Io.Timestamp.now(io, .awake);
         const elapsed_ms = start_ts.durationTo(end_ts).toMilliseconds();
         const time_str = try fmtDuration(allocator, elapsed_ms);

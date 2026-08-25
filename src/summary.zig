@@ -49,9 +49,8 @@ pub const Tracker = struct {
         self.timings.deinit(allocator);
     }
 
-    /// Rail-prefixed timings table: every task, status, duration and a bar
-    /// relative to the slowest one. The rail cap (footer) is printed by the
-    /// pipeline afterwards.
+    /// Rail-prefixed timings table: task label, file count, status and duration.
+    /// The rail cap (footer) is printed by the pipeline afterwards.
     pub fn renderTimingsTable(
         self: *Tracker,
         io: std.Io,
