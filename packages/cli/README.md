@@ -18,7 +18,7 @@ Run linters, formatters, and custom scripts against staged git files with modern
 ## ⚡ Preview
 
 ```text
-◆ neostaged v0.1.0 · ⎇ main · 2 staged
+◆ neostaged v0.2.0 · ⎇ main · 2 staged
 │
 │ ◈ neostaged.json — 2 files · 1 pattern
 │

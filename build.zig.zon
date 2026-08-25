@@ -1,6 +1,6 @@
 .{
     .name = .neostaged,
-    .version = "0.1.0",
+    .version = "0.2.0",
     .fingerprint = 0x8aee924b75da7a21,
     .paths = .{
         "build.zig",

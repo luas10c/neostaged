@@ -119,8 +119,6 @@ jobs:
             echo "Publishing $PACKAGE@$VERSION from $DIR..."
             npm publish "$DIR" --provenance --access public
           done
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and publish CLI package (neostaged)
         shell: bash
@@ -136,11 +134,23 @@ jobs:
             exit 0
           fi
 
+          # Sync optionalDependencies pins to the native version being released,
+          # so the published CLI always points at existing platform packages
+          # even when the manifest on main still references older versions.
+          if [ -f "./packages/neostaged-linux-x64-gnu/package.json" ]; then
+            NATIVE_VERSION=$(npm --prefix ./packages/neostaged-linux-x64-gnu pkg get version | tr -d '"')
+            echo "Syncing optionalDependencies pins to native version $NATIVE_VERSION..."
+
+            for dep in darwin-arm64 darwin-x64 linux-arm-gnueabihf linux-arm64-gnu linux-arm64-musl linux-ppc64-gnu linux-s390x-gnu linux-x64-gnu linux-x64-musl win32-arm64-msvc win32-ia32-msvc win32-x64-msvc; do
+              npm pkg set "optionalDependencies.@neostaged/neostaged-$dep=$NATIVE_VERSION" --prefix "$DIR"
+            done
+          else
+            echo "No native package dirs found, keeping manifest pins."
+          fi
+
           echo "Building CLI package $PACKAGE@$VERSION..."
           npm run --prefix packages/cli build
           cp -f README.md "$DIR/README.md"
 
           echo "Publishing CLI package $PACKAGE@$VERSION..."
           npm publish "$DIR" --provenance --access public
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,6 +1,6 @@
 {
   "name": "neostaged",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "files": [
     "dist",
     "README.md",
@@ -47,7 +47,7 @@
     "@neostaged/neostaged-linux-arm64-gnu": "0.1.0",
     "@neostaged/neostaged-linux-arm64-musl": "0.1.0",
     "@neostaged/neostaged-linux-ppc64-gnu": "0.1.0",
-    "@neostaged/neostaged-linux-s390x-gnu": "0.1.0",
+    "@neostaged/neostaged-linux-s390x-gnu": "0.0.2",
     "@neostaged/neostaged-linux-x64-gnu": "0.1.0",
     "@neostaged/neostaged-linux-x64-musl": "0.1.0",
     "@neostaged/neostaged-win32-arm64-msvc": "0.1.0",
