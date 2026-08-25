@@ -1,11 +1,10 @@
 #!/usr/bin/env node
 
 import { createRequire } from 'node:module'
-import { join, resolve } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
-const require = createRequire(import.meta.dirname)
-
-const addon = require(join(import.meta.dirname, '..', 'bin', 'neostaged.node'))
+const require = createRequire(import.meta.url)
 
 const help = `
 neostaged
@@ -16,50 +15,106 @@ Options:
   --cwd PATH       Run neostaged from a specific directory
   --config PATH    Use a specific neostaged config file
   --list           Print the staged files and exit
+  --allow-empty    Allow empty commits when tasks revert all staged changes
+  --no-stash       Disable the automatic backup snapshot
+  --no-revert      Keep task modifications in the working tree on failure
   -h, --help       Print help
   -V, --version    Print version
 `
 
-type Options = {
-  cwd: string
-  config: string | null
+interface Options {
+  cwd?: string
+  config?: string
   list: boolean
+  stash: boolean
+  revert: boolean
+  allowEmpty: boolean
 }
 
-function parseArgs(argv: unknown[]) {
+function fail(message: string): never {
+  console.error(message)
+  process.exit(1)
+}
+
+function parseArgs(argv: string[]): Options {
   const options: Options = {
-    cwd: process.cwd(),
-    config: null,
-    list: false
+    list: false,
+    stash: true,
+    revert: true,
+    allowEmpty: false,
   }
 
   for (let i = 2; i < argv.length; i++) {
-    const arg = argv[i] as '--cwd' | '--config' | '--list'
+    const arg = argv[i]
 
     if (arg === '--cwd') {
-      options.cwd = resolve(argv[++i] as string)
+      const value = argv[++i]
+      if (value === undefined) fail(`Missing value for ${arg}`)
+      options.cwd = resolve(value)
     } else if (arg === '--config') {
-      options.config = argv[++i] as null
+      const value = argv[++i]
+      if (value === undefined) fail(`Missing value for ${arg}`)
+      options.config = value
     } else if (arg === '--list') {
       options.list = true
+    } else if (arg === '--allow-empty') {
+      options.allowEmpty = true
+    } else if (arg === '--no-stash') {
+      options.stash = false
+    } else if (arg === '--no-revert') {
+      options.revert = false
     } else if (arg === '-h' || arg === '--help') {
       console.log(help)
       process.exit(0)
     } else if (arg === '-V' || arg === '--version') {
-      console.log('neostaged')
+      console.log(getVersion())
       process.exit(0)
     } else {
-      console.error(`Unknown argument: ${arg}`)
-      process.exit(1)
+      fail(`Unknown argument: ${arg}`)
     }
   }
 
   return options
 }
 
+function getVersion(): string {
+  try {
+    const packageJsonPath = resolve(import.meta.dirname, '..', 'package.json')
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as { version?: string }
+    return packageJson.version ?? '0.0.0'
+  } catch {
+    return '0.0.0'
+  }
+}
+
 try {
-  addon.run(parseArgs(process.argv))
+  const options = parseArgs(process.argv)
+
+  const addonPath = resolve(import.meta.dirname, '..', 'bin', 'neostaged.node')
+
+  let run: (options: Record<string, unknown>) => boolean
+
+  try {
+    run = require(addonPath).run
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err)
+    console.error(`Failed to load the neostaged native module: ${reason}`)
+    console.error('Reinstall the package so its postinstall script can fetch the native binary.')
+    process.exit(1)
+  }
+
+  const ok = run({
+    cwd: options.cwd ?? resolve('.'),
+    config: options.config,
+    list: options.list,
+    color: Boolean(process.stdout.isTTY) && !('NO_COLOR' in process.env),
+    stash: options.stash,
+    revert: options.revert,
+    allow_empty: options.allowEmpty,
+  })
+
+  process.exitCode = ok ? 0 : 1
 } catch (err) {
-  console.error(err instanceof Error ? err.message || err : err)
+  console.error(err instanceof Error ? (err.message || err) : err)
   process.exit(1)
 }
