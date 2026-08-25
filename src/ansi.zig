@@ -1,6 +1,14 @@
 const std = @import("std");
 
+/// When false, all style functions emit the value unchanged. Set once at
+/// startup based on TTY detection / NO_COLOR by the entry point.
+pub var enabled: bool = true;
+
 fn color(allocator: std.mem.Allocator, code: u8, value: []const u8) ![]u8 {
+    if (!enabled) {
+        return allocator.dupe(u8, value);
+    }
+
     return std.fmt.allocPrint(
         allocator,
         "\x1b[{d}m{s}\x1b[0m",
@@ -9,6 +17,10 @@ fn color(allocator: std.mem.Allocator, code: u8, value: []const u8) ![]u8 {
 }
 
 fn style(allocator: std.mem.Allocator, codes: []const u8, value: []const u8) ![]u8 {
+    if (!enabled) {
+        return allocator.dupe(u8, value);
+    }
+
     var buf: [64]u8 = undefined;
     var pos: usize = 0;
     for (codes, 0..) |code, i| {

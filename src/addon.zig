@@ -69,6 +69,12 @@ extern fn napi_get_undefined(
     result: *napi_value,
 ) c_int;
 
+extern fn napi_get_boolean(
+    env: napi_env,
+    value: bool,
+    result: *napi_value,
+) c_int;
+
 extern fn napi_throw_error(
     env: napi_env,
     code: [*c]const u8,
@@ -82,30 +88,52 @@ extern fn napi_set_named_property(
     value: napi_value,
 ) c_int;
 
-fn run(env: napi_env, info: napi_callback_info) callconv(.c) napi_value {
-    var result: napi_value = null;
-    _ = napi_get_undefined(env, &result);
+/// Errors that escape pipeline.run without having been reported to the user
+/// (bad JS options). Everything else is either printed by the pipeline to
+/// stderr or is pointless to report (e.g. broken pipe), so run() resolves to
+/// `false` instead of throwing into JS.
+fn throwsToJs(err: anyerror) bool {
+    return switch (err) {
+        error.InvalidArguments,
+        error.MissingOptions,
+        error.InvalidOptionType,
+        => true,
+        else => false,
+    };
+}
 
-    runInner(env, info) catch |err| {
+fn run(env: napi_env, info: napi_callback_info) callconv(.c) napi_value {
+    var undefined_value: napi_value = null;
+    _ = napi_get_undefined(env, &undefined_value);
+
+    const succeeded = runInner(env, info) catch |err| blk: {
+        pipeline.dbgErrName(@errorName(err));
+        if (!throwsToJs(err)) break :blk false;
+
+        const allocator = std.heap.smp_allocator;
         const msg = std.fmt.allocPrintSentinel(
-            std.heap.smp_allocator,
+            allocator,
             "neostaged failed: {s}",
             .{@errorName(err)},
             0,
-        ) catch "neostaged failed";
-
-        if (msg.len != "neostaged failed".len) {
-            defer std.heap.smp_allocator.free(msg);
-        }
+        ) catch {
+            _ = napi_throw_error(env, null, "neostaged failed");
+            break :blk false;
+        };
 
         _ = napi_throw_error(env, null, msg.ptr);
-        return result;
+        allocator.free(msg);
+        break :blk false;
     };
 
-    return result;
+    if (!succeeded) return undefined_value;
+
+    var bool_value: napi_value = null;
+    _ = napi_get_boolean(env, true, &bool_value);
+    return bool_value;
 }
 
-fn runInner(env: napi_env, info: napi_callback_info) !void {
+fn runInner(env: napi_env, info: napi_callback_info) !bool {
     var argc: usize = 1;
     var argv: [1]napi_value = .{null};
 
@@ -122,21 +150,32 @@ fn runInner(env: napi_env, info: napi_callback_info) !void {
     const cwd = try getOptionalString(env, argv[0], "cwd") orelse try allocator.dupe(u8, ".");
     defer allocator.free(cwd);
 
-    const config = try getOptionalString(env, argv[0], "config");
-    defer if (config) |value| allocator.free(value);
+    const config_arg = try getOptionalString(env, argv[0], "config") orelse try allocator.dupe(u8, "");
+    defer allocator.free(config_arg);
+
+    const config: ?[]const u8 = if (config_arg.len > 0) config_arg else null;
 
     const list = try getOptionalBool(env, argv[0], "list") orelse false;
+    const color = try getOptionalBool(env, argv[0], "color") orelse false;
 
-    var threaded_io: std.Io.Threaded = .init_single_threaded;
+    const stash = try getOptionalBool(env, argv[0], "stash") orelse true;
+    const revert = try getOptionalBool(env, argv[0], "revert") orelse true;
+    const allow_empty = try getOptionalBool(env, argv[0], "allow_empty") orelse false;
+
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
     defer threaded_io.deinit();
 
-    const io = threaded_io.io();
-
-    try pipeline.run(io, allocator, .{
+    try pipeline.run(threaded_io.io(), allocator, .{
         .cwd = cwd,
         .config = config,
         .list = list,
+        .color = color,
+        .stash = stash,
+        .revert = revert,
+        .allow_empty = allow_empty,
     });
+
+    return true;
 }
 
 fn getOptionalBool(env: napi_env, object: napi_value, name: [*c]const u8) !?bool {
@@ -154,6 +193,9 @@ fn getOptionalBool(env: napi_env, object: napi_value, name: [*c]const u8) !?bool
     return out;
 }
 
+/// Returns an exactly-sized copy of the property string. The extra scratch
+/// buffer is always freed with its full allocation length so that size-class
+/// allocators (e.g. std.heap.smp_allocator) see a matching free.
 fn getOptionalString(env: napi_env, object: napi_value, name: [*c]const u8) !?[]const u8 {
     var value: napi_value = null;
     if (napi_get_named_property(env, object, name, &value) != 0) return null;
@@ -169,15 +211,19 @@ fn getOptionalString(env: napi_env, object: napi_value, name: [*c]const u8) !?[]
         return error.InvalidOptionType;
     }
 
+    if (len == 0) {
+        return try std.heap.smp_allocator.dupe(u8, "");
+    }
+
     const buf = try std.heap.smp_allocator.alloc(u8, len + 1);
-    errdefer std.heap.smp_allocator.free(buf);
+    defer std.heap.smp_allocator.free(buf);
 
     var written: usize = 0;
     if (napi_get_value_string_utf8(env, value, buf.ptr, buf.len, &written) != 0) {
         return error.InvalidOptionType;
     }
 
-    return buf[0..written];
+    return try std.heap.smp_allocator.dupe(u8, buf[0..written]);
 }
 
 export fn napi_register_module_v1(

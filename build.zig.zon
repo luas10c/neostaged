@@ -1,0 +1,11 @@
+.{
+    .name = .neostaged,
+    .version = "0.0.5",
+    .fingerprint = 0x8aee924b75da7a21,
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "tests",
+    },
+}

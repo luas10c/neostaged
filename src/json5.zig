@@ -42,31 +42,21 @@ pub fn sanitize(input: []const u8, alloc: std.mem.Allocator) ![]u8 {
 
         // Block comment /* */
         if (input[i] == '/' and i + 1 < input.len and input[i + 1] == '*') {
-            i += 2;
-            while (i + 1 < input.len) {
-                if (input[i] == '*' and input[i + 1] == '/') {
-                    i += 2;
-                    break;
-                }
-                i += 1;
-            }
+            i = skipBlockComment(input, i);
             continue;
         }
 
         // Trailing comma before } or ]
         if (input[i] == ',') {
             var j = i + 1;
-            j = skipJson5Whitespace(input, j);
+            j = skipJson5Ignorable(input, j);
             if (j < input.len and (input[j] == '}' or input[j] == ']')) {
                 i += 1;
                 continue;
             }
         }
 
-        // Unquoted object key: after { or , (with optional whitespace), a bare identifier
-        // We detect: we're at a position where an identifier char starts and we're in key position.
-        // Simpler: if current char is identifier-start and not a digit, and context expects a key.
-        // Strategy: scan ahead — if identifier followed by optional-ws then ':', it's an unquoted key.
+        // Unquoted object key: identifier followed by optional whitespace then ':'
         if (isIdentStart(input[i])) {
             if (tryUnquotedKey(input, i)) |key_end| {
                 try out.append(alloc, '"');
@@ -77,155 +67,70 @@ pub fn sanitize(input: []const u8, alloc: std.mem.Allocator) ![]u8 {
             }
         }
 
-        // Numbers: Infinity, NaN, +Infinity, +NaN, -Infinity, -NaN, +digits, hex, leading/trailing dot
-        if (input[i] == 'I' and matchSlice(input, i, "Infinity")) {
-            try out.appendSlice(alloc, "1e999");
-            i += "Infinity".len;
-            continue;
-        }
-        if (input[i] == 'N' and matchSlice(input, i, "NaN")) {
-            // JSON has no NaN — emit null as closest representable (or a string hack)
-            // Per JSON5 spec, NaN is unrepresentable in JSON; we emit a sentinel float string
-            // that std.json won't parse as float. Best option: keep as string token won't work.
-            // We use the trick: emit a number string the parser accepts, then note in parse().
-            // Actually std.json parses numbers as integer/float — emit "null" so caller gets .null.
-            try out.appendSlice(alloc, "null");
-            i += "NaN".len;
-            continue;
-        }
+        // Numbers: Infinity, NaN, ±Infinity, ±NaN
+        if (try matchNumberKeyword(input, i, "Infinity", &out, alloc)) continue;
+        if (try matchNumberKeyword(input, i, "NaN", &out, alloc)) continue;
 
-        // +Infinity / +NaN / +digits / +.digits
-        if (input[i] == '+') {
+        // +/- prefixed numbers
+        if (input[i] == '+' or input[i] == '-') {
+            const negative = input[i] == '-';
             const rest = input[i + 1 ..];
-            if (matchSlice(rest, 0, "Infinity")) {
-                try out.appendSlice(alloc, "1e999");
-                i += 1 + "Infinity".len;
-                continue;
-            }
-            if (matchSlice(rest, 0, "NaN")) {
-                try out.appendSlice(alloc, "null");
-                i += 1 + "NaN".len;
-                continue;
-            }
-            // +digits or +.digits → strip the + and emit the full number token
-            if (rest.len > 0 and (std.ascii.isDigit(rest[0]) or rest[0] == '.')) {
-                i += 1; // skip +
-                // emit full number token from new i
-                var j = i;
-                while (j < input.len and isNumberChar(input[j])) j += 1;
-                // fix leading dot: .5 → 0.5
-                if (input[i] == '.') try out.append(alloc, '0');
-                // fix trailing dot: 3. → 3.0
-                if (j > i and input[j - 1] == '.') {
-                    try out.appendSlice(alloc, input[i..j]);
-                    try out.append(alloc, '0');
+
+            if (matchSlice(rest, 0, "Infinity") or matchSlice(rest, 0, "NaN")) {
+                if (negative) try out.append(alloc, '-');
+                if (matchSlice(rest, 0, "Infinity")) {
+                    try out.appendSlice(alloc, "1e999");
+                    i += 1 + "Infinity".len;
                 } else {
-                    try out.appendSlice(alloc, input[i..j]);
+                    try out.appendSlice(alloc, "null");
+                    i += 1 + "NaN".len;
                 }
+                continue;
+            }
+
+            if (rest.len > 0 and rest[0] == '0' and rest.len > 1 and isHexPrefix(rest)) {
+                var j: usize = i + 3;
+                while (j < input.len and isHexDigit(input[j])) j += 1;
+                try emitHexNumber(alloc, &out, input[i + 3 .. j], negative);
                 i = j;
                 continue;
-            } else {
-                try out.append(alloc, input[i]);
-                i += 1;
+            }
+
+            if (rest.len > 0 and (std.ascii.isDigit(rest[0]) or rest[0] == '.')) {
+                const number_start = i + 1;
+                var j = number_start;
+                while (j < input.len and isNumberChar(input[j])) j += 1;
+
+                if (negative) try out.append(alloc, '-');
+                try emitNumberToken(alloc, &out, input[number_start..j]);
+
+                i = j;
                 continue;
             }
+
+            // Bare '+'/'-' outside any number context: keep verbatim.
+            try out.append(alloc, input[i]);
+            i += 1;
+            continue;
         }
 
-        // -Infinity / -NaN
-        if (input[i] == '-' and i + 1 < input.len) {
-            if (matchSlice(input, i + 1, "Infinity")) {
-                try out.appendSlice(alloc, "-1e999");
-                i += 1 + "Infinity".len;
-                continue;
-            }
-            if (matchSlice(input, i + 1, "NaN")) {
-                try out.appendSlice(alloc, "null");
-                i += 1 + "NaN".len;
-                continue;
-            }
-        }
-
-        // Hex numbers: 0x... / 0X...
-        if (input[i] == '0' and i + 1 < input.len and (input[i + 1] == 'x' or input[i + 1] == 'X')) {
+        // Hex numbers without sign: 0x...
+        if (isHexPrefixAt(input, i)) {
             var j = i + 2;
             while (j < input.len and isHexDigit(input[j])) j += 1;
-            const hex_str = input[i + 2 .. j];
-            const val = try std.fmt.parseInt(u64, hex_str, 16);
-            var tmp_buf: [32]u8 = undefined;
-            const dec = std.fmt.bufPrint(&tmp_buf, "{d}", .{val}) catch unreachable;
-            try out.appendSlice(alloc, dec);
+            try emitHexNumber(alloc, &out, input[i + 2 .. j], false);
             i = j;
             continue;
         }
 
-        // -0x... negative hex
-        if (input[i] == '-' and i + 1 < input.len and input[i + 1] == '0' and
-            i + 2 < input.len and (input[i + 2] == 'x' or input[i + 2] == 'X'))
-        {
-            var j = i + 3;
-            while (j < input.len and isHexDigit(input[j])) j += 1;
-            const hex_str = input[i + 3 .. j];
-            const val = try std.fmt.parseInt(u64, hex_str, 16);
-            var tmp_buf: [33]u8 = undefined;
-            const dec = std.fmt.bufPrint(&tmp_buf, "-{d}", .{val}) catch unreachable;
-            try out.appendSlice(alloc, dec);
-            i = j;
-            continue;
-        }
-
-        // Leading decimal point: .digits → 0.digits
-        if (input[i] == '.' and i + 1 < input.len and std.ascii.isDigit(input[i + 1])) {
-            try out.append(alloc, '0');
-            // emit . and rest of number
-            var j = i;
-            while (j < input.len and (std.ascii.isDigit(input[j]) or input[j] == '.' or
-                input[j] == 'e' or input[j] == 'E' or input[j] == '+' or input[j] == '-')) j += 1;
-            try out.appendSlice(alloc, input[i..j]);
-            i = j;
-            continue;
-        }
-
-        // Negative leading decimal: -.digits → -0.digits
-        if (input[i] == '-' and i + 1 < input.len and input[i + 1] == '.' and
-            i + 2 < input.len and std.ascii.isDigit(input[i + 2]))
-        {
-            try out.appendSlice(alloc, "-0");
-            i += 1; // skip -, then emit .digits normally
-            // fall through to emit .digits
-            var j = i;
-            while (j < input.len and (std.ascii.isDigit(input[j]) or input[j] == '.' or
-                input[j] == 'e' or input[j] == 'E' or input[j] == '+' or input[j] == '-')) j += 1;
-            try out.appendSlice(alloc, input[i..j]);
-            i = j;
-            continue;
-        }
-
-        // Trailing decimal point: digits. → digits.0
-        // Also handles normal integers/floats by emitting the full token.
+        // Numbers (including leading/trailing dot fixes like .5 → 0.5, 1. → 1.0)
         if (std.ascii.isDigit(input[i]) or
-            (input[i] == '-' and i + 1 < input.len and std.ascii.isDigit(input[i + 1])))
+            (input[i] == '.' and i + 1 < input.len and std.ascii.isDigit(input[i + 1])))
         {
-            // scan full number token
             var j = i;
-            if (input[j] == '-') j += 1;
-            while (j < input.len and std.ascii.isDigit(input[j])) j += 1;
-            // optional fractional part
-            if (j < input.len and input[j] == '.') {
-                j += 1;
-                while (j < input.len and std.ascii.isDigit(input[j])) j += 1;
-            }
-            // optional exponent
-            if (j < input.len and (input[j] == 'e' or input[j] == 'E')) {
-                j += 1;
-                if (j < input.len and (input[j] == '+' or input[j] == '-')) j += 1;
-                while (j < input.len and std.ascii.isDigit(input[j])) j += 1;
-            }
-            // trailing dot? (e.g. "1.") → append "0"
-            const tok = input[i..j];
-            try out.appendSlice(alloc, tok);
-            if (tok.len >= 2 and tok[tok.len - 1] == '.') {
-                try out.append(alloc, '0');
-            }
+            while (j < input.len and isNumberChar(input[j])) j += 1;
+
+            try emitNumberToken(alloc, &out, input[i..j]);
             i = j;
             continue;
         }
@@ -237,7 +142,144 @@ pub fn sanitize(input: []const u8, alloc: std.mem.Allocator) ![]u8 {
     return out.toOwnedSlice(alloc);
 }
 
-/// Emit a double-quoted string, handling \<newline> line continuations.
+fn isHexPrefix(input: []const u8) bool {
+    return input[0] == '0' and input.len > 1 and (input[1] == 'x' or input[1] == 'X');
+}
+
+fn isHexPrefixAt(input: []const u8, pos: usize) bool {
+    return pos + 1 < input.len and input[pos] == '0' and
+        (input[pos + 1] == 'x' or input[pos + 1] == 'X');
+}
+
+fn matchNumberKeyword(
+    input: []const u8,
+    pos: usize,
+    keyword: []const u8,
+    out: *std.ArrayListUnmanaged(u8),
+    alloc: std.mem.Allocator,
+) !bool {
+    if (!matchSlice(input, pos, keyword)) return false;
+
+    if (std.mem.eql(u8, keyword, "Infinity")) {
+        try out.appendSlice(alloc, "1e999");
+    } else {
+        try out.appendSlice(alloc, "null");
+    }
+
+    return true;
+}
+
+/// Emits a normalized JSON number token: fixes leading/trailing dots.
+fn emitNumberToken(
+    alloc: std.mem.Allocator,
+    out: *std.ArrayListUnmanaged(u8),
+    token: []const u8,
+) !void {
+    if (token.len == 0) return;
+
+    if (token[0] == '.') try out.append(alloc, '0');
+
+    try out.appendSlice(alloc, token);
+
+    if (token[token.len - 1] == '.') try out.append(alloc, '0');
+}
+
+fn emitHexNumber(
+    alloc: std.mem.Allocator,
+    out: *std.ArrayListUnmanaged(u8),
+    hex_str: []const u8,
+    negative: bool,
+) !void {
+    const value: u128 = std.fmt.parseInt(u64, hex_str, 16) catch |err| switch (err) {
+        error.Overflow => std.fmt.parseInt(u128, hex_str, 16) catch {
+            return error.HexNumberOutOfRange;
+        },
+        else => return err,
+    };
+
+    var tmp_buf: [48]u8 = undefined;
+    const dec = if (negative)
+        std.fmt.bufPrint(&tmp_buf, "-{d}", .{value}) catch unreachable
+    else
+        std.fmt.bufPrint(&tmp_buf, "{d}", .{value}) catch unreachable;
+
+    try out.appendSlice(alloc, dec);
+}
+
+/// Writes `c` as part of a JSON string body, escaping what JSON forbids raw.
+fn emitStringChar(
+    out: *std.ArrayListUnmanaged(u8),
+    alloc: std.mem.Allocator,
+    c: u8,
+) !void {
+    switch (c) {
+        0x08 => try out.appendSlice(alloc, "\\b"),
+        0x09 => try out.appendSlice(alloc, "\\t"),
+        0x0A => try out.appendSlice(alloc, "\\n"),
+        0x0C => try out.appendSlice(alloc, "\\f"),
+        0x0D => try out.appendSlice(alloc, "\\r"),
+        else => {
+            if (c < 0x20) {
+                var tmp: [6]u8 = undefined;
+                const esc = std.fmt.bufPrint(&tmp, "\\u{x:0>4}", .{c}) catch unreachable;
+                try out.appendSlice(alloc, esc);
+            } else {
+                try out.append(alloc, c);
+            }
+        },
+    }
+}
+
+/// Handles the shared escape machinery after a backslash inside a string.
+/// Newline continuations (\ + LF / CRLF) are handled by the callers.
+/// Returns true when the escape was consumed; false when the caller should
+/// treat the backslash literally (invalid escape sequences stay verbatim so
+/// the final JSON parser reports them).
+fn consumeStringEscape(
+    input: []const u8,
+    backslash_pos: usize,
+    out: *std.ArrayListUnmanaged(u8),
+    alloc: std.mem.Allocator,
+) !bool {
+    if (backslash_pos + 1 >= input.len) return false;
+    const next = input[backslash_pos + 1];
+
+    switch (next) {
+        'v' => {
+            try out.appendSlice(alloc, "\\u000B");
+            return true;
+        },
+        '0' => {
+            try out.appendSlice(alloc, "\\u0000");
+            return true;
+        },
+        'x' => {
+            if (backslash_pos + 3 < input.len) {
+                const hi = hexValue(input[backslash_pos + 2]);
+                const lo = hexValue(input[backslash_pos + 3]);
+                if (hi != null and lo != null) {
+                    try emitStringChar(out, alloc, hi.? * 16 + lo.?);
+                    return true;
+                }
+            }
+            return false;
+        },
+        else => return false,
+    }
+}
+
+fn skipBlockComment(input: []const u8, start: usize) usize {
+    var i = start + 2;
+    while (i + 1 < input.len) : (i += 1) {
+        if (input[i] == '*' and input[i + 1] == '/') {
+            return i + 2;
+        }
+    }
+    return input.len;
+}
+
+/// Emit a double-quoted string, handling escapes, line continuations,
+/// \xNN sequences and raw control characters.
 /// Returns new position after closing quote.
 fn emitDoubleString(input: []const u8, start: usize, out: *std.ArrayListUnmanaged(u8), alloc: std.mem.Allocator) !usize {
     var i = start;
@@ -246,40 +288,40 @@ fn emitDoubleString(input: []const u8, start: usize, out: *std.ArrayListUnmanage
     while (i < input.len) {
         if (input[i] == '\\' and i + 1 < input.len) {
             const next = input[i + 1];
-            if (next == '\n') {
-                // line continuation: skip both chars
+
+            if (next == '\n' or next == '\r') {
+                // line continuation: skip backslash + newline(s)
                 i += 2;
+                if (next == '\r' and i < input.len and input[i] == '\n') i += 1;
                 continue;
             }
-            if (next == '\r') {
-                // \r\n continuation
-                i += 2;
-                if (i < input.len and input[i] == '\n') i += 1;
+
+            if (try consumeStringEscape(input, i, out, alloc)) {
+                i += if (input[i + 1] == 'x') 4 else 2;
                 continue;
             }
-            // \v: emit \u000B (vertical tab)
-            if (next == 'v') {
-                try out.appendSlice(alloc, "\\u000B");
-                i += 2;
-                continue;
-            }
-            // \0: emit \u0000 (null)
-            if (next == '0') {
-                try out.appendSlice(alloc, "\\u0000");
-                i += 2;
-                continue;
-            }
+
             try out.append(alloc, '\\');
             try out.append(alloc, next);
             i += 2;
-        } else if (input[i] == '"') {
+            continue;
+        }
+
+        if (input[i] == '"') {
             try out.append(alloc, '"');
             i += 1;
             break;
-        } else {
-            try out.append(alloc, input[i]);
-            i += 1;
         }
+
+        if (input[i] < 0x20) {
+            // Raw control character: JSON forbids it raw, escape it.
+            try emitStringChar(out, alloc, input[i]);
+            i += 1;
+            continue;
+        }
+
+        try out.append(alloc, input[i]);
+        i += 1;
     }
     return i;
 }
@@ -293,45 +335,50 @@ fn emitSingleString(input: []const u8, start: usize, out: *std.ArrayListUnmanage
     while (i < input.len) {
         if (input[i] == '\\' and i + 1 < input.len) {
             const next = input[i + 1];
+
             if (next == '\'') {
                 try out.append(alloc, '\'');
                 i += 2;
                 continue;
             }
-            if (next == '\n') {
+
+            if (next == '\n' or next == '\r') {
                 i += 2;
+                if (next == '\r' and i < input.len and input[i] == '\n') i += 1;
                 continue;
             }
-            if (next == '\r') {
-                i += 2;
-                if (i < input.len and input[i] == '\n') i += 1;
+
+            if (try consumeStringEscape(input, i, out, alloc)) {
+                i += if (input[i + 1] == 'x') 4 else 2;
                 continue;
             }
-            if (next == 'v') {
-                try out.appendSlice(alloc, "\\u000B");
-                i += 2;
-                continue;
-            }
-            if (next == '0') {
-                try out.appendSlice(alloc, "\\u0000");
-                i += 2;
-                continue;
-            }
+
             try out.append(alloc, '\\');
             try out.append(alloc, next);
             i += 2;
-        } else if (input[i] == '\'') {
+            continue;
+        }
+
+        if (input[i] == '\'') {
             try out.append(alloc, '"');
             i += 1;
             break;
-        } else if (input[i] == '"') {
-            try out.append(alloc, '\\');
-            try out.append(alloc, '"');
-            i += 1;
-        } else {
-            try out.append(alloc, input[i]);
-            i += 1;
         }
+
+        if (input[i] == '"') {
+            try out.appendSlice(alloc, "\\\"");
+            i += 1;
+            continue;
+        }
+
+        if (input[i] < 0x20) {
+            try emitStringChar(out, alloc, input[i]);
+            i += 1;
+            continue;
+        }
+
+        try out.append(alloc, input[i]);
+        i += 1;
     }
     return i;
 }
@@ -342,14 +389,28 @@ fn tryUnquotedKey(input: []const u8, pos: usize) ?usize {
     if (pos >= input.len or !isIdentStart(input[pos])) return null;
     var j = pos + 1;
     while (j < input.len and isIdentCont(input[j])) j += 1;
-    // skip whitespace
+    // skip whitespace and comments
     var k = j;
-    while (k < input.len and isAsciiWhitespace(input[k])) k += 1;
+    while (k < input.len) {
+        if (isAsciiWhitespace(input[k])) {
+            k += 1;
+            continue;
+        }
+        if (input[k] == '/' and k + 1 < input.len and input[k + 1] == '/') {
+            while (k < input.len and input[k] != '\n') k += 1;
+            continue;
+        }
+        if (input[k] == '/' and k + 1 < input.len and input[k + 1] == '*') {
+            k = skipBlockComment(input, k);
+            continue;
+        }
+        break;
+    }
     if (k < input.len and input[k] == ':') return j;
     return null;
 }
 
-fn skipJson5Whitespace(input: []const u8, start: usize) usize {
+fn skipJson5Ignorable(input: []const u8, start: usize) usize {
     var i = start;
     while (i < input.len) {
         if (isAsciiWhitespace(input[i])) {
@@ -364,6 +425,16 @@ fn skipJson5Whitespace(input: []const u8, start: usize) usize {
         // LS / PS
         if (matchUtf8(input, i, "\xE2\x80\xA8") or matchUtf8(input, i, "\xE2\x80\xA9")) {
             i += 3;
+            continue;
+        }
+        // Line comment //
+        if (input[i] == '/' and i + 1 < input.len and input[i + 1] == '/') {
+            while (i < input.len and input[i] != '\n') i += 1;
+            continue;
+        }
+        // Block comment
+        if (input[i] == '/' and i + 1 < input.len and input[i + 1] == '*') {
+            i = skipBlockComment(input, i);
             continue;
         }
         break;
@@ -396,6 +467,15 @@ fn isHexDigit(c: u8) bool {
     return (c >= '0' and c <= '9') or (c >= 'a' and c <= 'f') or (c >= 'A' and c <= 'F');
 }
 
+fn hexValue(c: u8) ?u8 {
+    return switch (c) {
+        '0'...'9' => c - '0',
+        'a'...'f' => c - 'a' + 10,
+        'A'...'F' => c - 'A' + 10,
+        else => null,
+    };
+}
+
 fn isNumberChar(c: u8) bool {
     return std.ascii.isDigit(c) or c == '.' or c == 'e' or c == 'E' or c == '+' or c == '-';
 }
@@ -410,4 +490,34 @@ pub fn parse(input: []const u8, alloc: std.mem.Allocator) !std.json.Parsed(std.j
         .allocate = .alloc_always,
         .ignore_unknown_fields = true,
     });
+}
+
+test "sanitize single quotes, comments, trailing comma, unquoted keys" {
+    const parsed = try parse(
+        \\{
+        \\  // comment
+        \\  '**/*.zig': ['eslint --fix', /* inline */ 'prettier --write'], // trailing
+        \\}
+    , std.testing.allocator);
+    defer parsed.deinit();
+
+    try std.testing.expect(parsed.value == .object);
+}
+
+test "sanitize hex and unicode escapes" {
+    const parsed = try parse("{ 'a': '\\x41\\u00e9' }", std.testing.allocator);
+    defer parsed.deinit();
+
+    try std.testing.expectEqualStrings("Aé", parsed.value.object.get("a").?.string);
+}
+
+test "sanitize numbers" {
+    const parsed = try parse("{ a: .5, b: 0xFF, c: 1., d: -.25 }", std.testing.allocator);
+    defer parsed.deinit();
+
+    const object = parsed.value.object;
+    try std.testing.expectEqual(@as(f64, 0.5), object.get("a").?.float);
+    try std.testing.expectEqual(@as(f64, 255.0), @as(f64, @floatFromInt(object.get("b").?.integer)));
+    try std.testing.expectEqual(@as(f64, 1.0), object.get("c").?.float);
+    try std.testing.expectEqual(@as(f64, -0.25), object.get("d").?.float);
 }

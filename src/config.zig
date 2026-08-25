@@ -25,88 +25,84 @@ pub const LoadedConfig = struct {
 };
 
 pub fn load(
+    io: std.Io,
     allocator: Allocator,
     start_dir: []const u8,
     explicit_path: ?[]const u8,
 ) !LoadedConfig {
-    if (explicit_path) |path| return loadFromPath(allocator, path);
-    return searchFrom(allocator, start_dir);
-}
+    if (explicit_path) |path| {
+        // Relative --config paths are interpreted against the run directory,
+        // not against the process working directory.
+        const resolved = if (std.fs.path.isAbsolute(path))
+            path
+        else blk: {
+            const joined = try std.fs.path.join(allocator, &.{ start_dir, path });
+            break :blk joined;
+        };
+        defer if (resolved.ptr != path.ptr) allocator.free(resolved);
 
-pub fn loadNearest(
-    allocator: Allocator,
-    repo_root: []const u8,
-    file_path: []const u8,
-) !LoadedConfig {
-    const full_file_path = try std.fs.path.join(allocator, &.{ repo_root, file_path });
-    defer allocator.free(full_file_path);
-
-    const file_dir = std.fs.path.dirname(full_file_path) orelse repo_root;
-
-    var current = try allocator.dupe(u8, file_dir);
-    defer allocator.free(current);
-
-    while (true) {
-        if (searchFrom(allocator, current)) |loaded| {
-            return loaded;
-        } else |err| switch (err) {
-            error.ConfigNotFound => {},
-            else => return err,
-        }
-
-        if (std.mem.eql(u8, current, repo_root)) break;
-
-        const parent = std.fs.path.dirname(current) orelse break;
-
-        if (parent.len < repo_root.len) break;
-
-        const next = try allocator.dupe(u8, parent);
-        allocator.free(current);
-        current = next;
-    }
-
-    return error.ConfigNotFound;
-}
-
-fn searchFrom(allocator: Allocator, start_dir: []const u8) !LoadedConfig {
-    for (search_places) |file_name| {
-        const candidate = try std.fs.path.join(allocator, &.{ start_dir, file_name });
-        defer allocator.free(candidate);
-
-        if (std.mem.eql(u8, file_name, "package.json")) {
-            const maybe_config = loadPackageJsonConfig(allocator, candidate) catch |err| switch (err) {
-                error.FileNotFound,
-                error.NotDir,
-                => continue,
-                else => return err,
-            };
-
-            if (maybe_config) |config| return config;
-            continue;
-        }
-
-        const config = loadFromPath(allocator, candidate) catch |err| switch (err) {
-            error.FileNotFound,
-            error.NotDir,
-            => continue,
+        _ = std.Io.Dir.cwd().statFile(io, resolved, .{}) catch |err| switch (err) {
+            error.FileNotFound => return error.ConfigNotFound,
             else => return err,
         };
 
-        return config;
+        return loadFromPath(io, allocator, resolved);
     }
 
-    return error.ConfigNotFound;
+    return searchFrom(io, allocator, start_dir);
 }
 
-fn loadFromPath(allocator: Allocator, path: []const u8) !LoadedConfig {
+/// Returns the path of the nearest config file that exists in `dir` (checked
+/// in priority order), or null when none of the candidates exist. A
+/// package.json only counts when it actually carries a neostaged config.
+/// Existence checks are cheap stats; no config content is parsed except a
+/// package.json that exists (to honour its optional nature).
+pub fn findConfigPathInDir(
+    io: std.Io,
+    allocator: Allocator,
+    dir: []const u8,
+) !?[]u8 {
+    for (search_places) |file_name| {
+        const candidate = try std.fs.path.join(allocator, &.{ dir, file_name });
+        errdefer allocator.free(candidate);
+
+        _ = std.Io.Dir.cwd().statFile(io, candidate, .{}) catch |err| switch (err) {
+            error.FileNotFound, error.NotDir => {
+                allocator.free(candidate);
+                continue;
+            },
+            else => return err,
+        };
+
+        if (std.mem.eql(u8, file_name, "package.json")) {
+            const maybe_loaded = try loadPackageJsonConfig(io, allocator, candidate);
+
+            if (maybe_loaded) |loaded| {
+                // Discard the probe result; the caller loads the path again.
+                loaded.parsed.deinit();
+                allocator.free(loaded.path);
+                return candidate;
+            }
+
+            allocator.free(candidate);
+            continue;
+        }
+
+        return candidate;
+    }
+
+    return null;
+}
+
+pub fn loadFromPath(io: std.Io, allocator: Allocator, path: []const u8) !LoadedConfig {
     const file_name = std.fs.path.basename(path);
 
     if (std.mem.eql(u8, file_name, "package.json")) {
-        return (try loadPackageJsonConfig(allocator, path)) orelse error.PackageJsonMissingNeostaged;
+        return (try loadPackageJsonConfig(io, allocator, path)) orelse error.PackageJsonMissingNeostaged;
     }
 
     if (isJsonConfig(file_name)) {
-        var parsed = try loadJsonFile(allocator, path);
+        var parsed = try loadJsonFile(io, allocator, path);
         errdefer parsed.deinit();
 
         const owned_path = try allocator.dupe(u8, path);
@@ -121,7 +117,7 @@ fn loadFromPath(allocator: Allocator, path: []const u8) !LoadedConfig {
     }
 
     if (isJavascriptConfig(file_name)) {
-        var parsed = try loadJavascriptFile(allocator, path);
+        var parsed = try loadJavascriptFile(io, allocator, path);
         errdefer parsed.deinit();
 
         const owned_path = try allocator.dupe(u8, path);
@@ -138,8 +134,16 @@ fn loadFromPath(allocator: Allocator, path: []const u8) !LoadedConfig {
     return error.UnsupportedConfigFile;
 }
 
-fn loadPackageJsonConfig(allocator: Allocator, path: []const u8) !?LoadedConfig {
-    var parsed = try loadJsonFile(allocator, path);
+fn searchFrom(io: std.Io, allocator: Allocator, start_dir: []const u8) !LoadedConfig {
+    const found = try findConfigPathInDir(io, allocator, start_dir);
+    const found_path = found orelse return error.ConfigNotFound;
+    defer allocator.free(found_path);
+
+    return loadFromPath(io, allocator, found_path);
+}
+
+fn loadPackageJsonConfig(io: std.Io, allocator: Allocator, path: []const u8) !?LoadedConfig {
+    var parsed = try loadJsonFile(io, allocator, path);
     errdefer parsed.deinit();
 
     const object = switch (parsed.value) {
@@ -166,11 +170,10 @@ fn loadPackageJsonConfig(allocator: Allocator, path: []const u8) !?LoadedConfig 
 }
 
 fn loadJsonFile(
+    io: std.Io,
     allocator: Allocator,
     path: []const u8,
 ) !std.json.Parsed(JsonValue) {
-    const io = std.Io.Threaded.global_single_threaded.io();
-
     const contents = try std.Io.Dir.cwd().readFileAlloc(
         io,
         path,
@@ -193,9 +196,7 @@ fn loadJsonFile(
     );
 }
 
-fn loadJavascriptFile(allocator: Allocator, path: []const u8) !std.json.Parsed(JsonValue) {
-    const io = std.Io.Threaded.global_single_threaded.io();
-
+fn loadJavascriptFile(io: std.Io, allocator: Allocator, path: []const u8) !std.json.Parsed(JsonValue) {
     const contents = try std.Io.Dir.cwd().readFileAlloc(
         io,
         path,
